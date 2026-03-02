@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  # Database (SQLite - file-based, no separate service needed)
+  
+  # Backend API Server
+  server:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.server
+    container_name: cloudnine-server
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_ENV=production
+      - PORT=5000
+      - DATABASE_URL=file:./data/prod.db
+      - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-this}
+      - CLIENT_URL=http://localhost:80
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    volumes:
+      - ./server/data:/app/data
+      - ./server/uploads:/app/uploads
+    networks:
+      - cloudnine-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Frontend Client
+  client:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.client
+    container_name: cloudnine-client
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - server
+    networks:
+      - cloudnine-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  cloudnine-network:
+    driver: bridge
+
+volumes:
+  server-data:
+  server-uploads:
