@@ -1,0 +1,329 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  username  String   @unique
+  password  String
+  name      String?
+  email     String?
+  phone     String?
+  role      Role     @default(branch)
+  branchId  String?
+  branch    Branch?  @relation(fields: [branchId], references: [id])
+  isActive  Boolean  @default(true)
+  lastLogin DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  createdCases    Case[]      @relation("CaseCreator")
+  validatedCases  Validation[]
+  dispatchedCases Dispatch[]
+  settlements     Settlement[]
+  queries         Query[]     @relation("QueryCreator")
+  activities      Activity[]
+
+  @@map("users")
+}
+
+model Branch {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  name      String
+  address   String?
+  city      String   @default("Bangalore")
+  state     String   @default("Karnataka")
+  pincode   String?
+  phone     String?
+  email     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  users User[]
+  cases Case[]
+
+  @@map("branches")
+}
+
+model InsuranceTPA {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  type        String   // Insurance or TPA
+  contactPerson String?
+  phone       String?
+  email       String?
+  address     String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  cases Case[]
+
+  @@map("insurance_tpas")
+}
+
+model Case {
+  id                String   @id @default(uuid())
+  mrn               String   @unique
+  patientName       String
+  patientAge        Int?
+  patientGender     String?
+  admissionDate     DateTime
+  dischargeDate     DateTime?
+  
+  // Financial
+  billAmount        Float    @default(0)
+  approvedAmount    Float    @default(0)
+  settledAmount     Float    @default(0)
+  
+  // Relations
+  branchId          String
+  branch            Branch   @relation(fields: [branchId], references: [id])
+  insuranceTpaId    String?
+  insuranceTpa      InsuranceTPA? @relation(fields: [insuranceTpaId], references: [id])
+  createdById       String
+  createdBy         User     @relation("CaseCreator", fields: [createdById], references: [id])
+  
+  // Status
+  currentStage      Stage    @default(STAGE_1)
+  status            CaseStatus @default(pending)
+  
+  // Timestamps
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  completedAt       DateTime?
+  
+  // Relations
+  documents         Document[]
+  validations       Validation[]
+  dispatch          Dispatch?
+  settlement        Settlement?
+  queries           Query[]
+  activities        Activity[]
+
+  @@map("cases")
+}
+
+model Document {
+  id          String   @id @default(uuid())
+  caseId      String
+  case        Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  stage       Stage
+  type        String   // preauth, final_bill, ds, approval_letter, etc.
+  fileName    String
+  filePath    String
+  fileSize    Int
+  mimeType    String
+  
+  // AI Validation
+  aiValidated Boolean  @default(false)
+  aiConfidence Float?
+  aiResult    String?  // JSON string with validation results
+  
+  // Manual Review
+  reviewedById String?
+  reviewedAt   DateTime?
+  reviewNotes  String?
+  
+  createdAt   DateTime @default(now())
+
+  @@map("documents")
+}
+
+model Validation {
+  id          String   @id @default(uuid())
+  caseId      String
+  case        Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  stage       Stage
+  
+  // Reviewer
+  reviewedById String
+  reviewedBy   User     @relation(fields: [reviewedById], references: [id])
+  
+  // Decision
+  decision    ValidationDecision
+  notes       String?
+  
+  // Discrepancy Details
+  discrepancyType    String?
+  discrepancyAmount  Float?
+  discrepancyReason  String?
+  
+  createdAt   DateTime @default(now())
+
+  @@map("validations")
+}
+
+model Dispatch {
+  id              String   @id @default(uuid())
+  caseId          String   @unique
+  case            Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  
+  // Dispatch Details
+  dispatchedById  String
+  dispatchedAt    DateTime @default(now())
+  dispatchMode    String   // courier, hand_delivery, email
+  courierName     String?
+  trackingNumber  String?
+  
+  // POD
+  podReceived     Boolean  @default(false)
+  podFilePath     String?
+  podReceivedAt   DateTime?
+  
+  // Recipient
+  recipientName   String?
+  recipientPhone  String?
+  
+  notes           String?
+
+  @@map("dispatches")
+}
+
+model Settlement {
+  id              String   @id @default(uuid())
+  caseId          String   @unique
+  case            Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  
+  // Settlement Details
+  settledById     String
+  settledBy       User     @relation(fields: [settledById], references: [id])
+  
+  // Payment
+  paymentDate     DateTime?
+  paymentMode     String?  // neft, rtgs, cheque, cash
+  paymentReference String?
+  settledAmount   Float    @default(0)
+  
+  // Short Payment
+  isShortPaid     Boolean  @default(false)
+  shortPaidReason String?
+  shortPaidAmount Float    @default(0)
+  
+  // Status
+  status          SettlementStatus @default(pending)
+  
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("settlements")
+}
+
+model Query {
+  id          String      @id @default(uuid())
+  caseId      String
+  case        Case        @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  
+  // Query Details
+  type        QueryType
+  subject     String
+  description String
+  priority    Priority    @default(medium)
+  
+  // Creator
+  createdById String
+  createdBy   User        @relation("QueryCreator", fields: [createdById], references: [id])
+  
+  // Status
+  status      QueryStatus @default(open)
+  
+  // Resolution
+  resolution  String?
+  resolvedAt  DateTime?
+  resolvedById String?
+  
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@map("queries")
+}
+
+model Activity {
+  id          String   @id @default(uuid())
+  caseId      String?
+  case        Case?    @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  
+  action      String   // created, updated, validated, dispatched, settled, etc.
+  description String
+  metadata    String?  // JSON string with additional data
+  
+  createdAt   DateTime @default(now())
+
+  @@map("activities")
+}
+
+// Enums
+enum Role {
+  branch
+  validation
+  dispatch
+  settlement
+  admin
+}
+
+enum Stage {
+  STAGE_1
+  STAGE_2
+  STAGE_3
+  STAGE_4
+}
+
+enum CaseStatus {
+  pending
+  approved
+  rejected
+  dispatched
+  settled
+  completed
+}
+
+enum ValidationDecision {
+  approved
+  rejected
+  query
+}
+
+enum SettlementStatus {
+  pending
+  partial
+  settled
+  short_paid
+}
+
+enum QueryType {
+  document
+  discrepancy
+  general
+  payment
+}
+
+enum Priority {
+  low
+  medium
+  high
+  urgent
+}
+
+enum QueryStatus {
+  open
+  in_progress
+  resolved
+  closed
+}

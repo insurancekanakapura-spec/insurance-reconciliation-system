@@ -1,0 +1,60 @@
+# Cloudnine Insurance Platform - Render Deployment Configuration
+# This file configures automatic deployment on Render.com
+
+services:
+  # Backend API Service
+  - type: web
+    name: cloudnine-server
+    runtime: node
+    plan: free
+    buildCommand: cd server && npm install && npx prisma generate && npx prisma migrate deploy
+    startCommand: cd server && npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: DATABASE_URL
+        fromDatabase:
+          name: cloudnine-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CLIENT_URL
+        value: https://cloudnine-client.onrender.com
+      - key: ANTHROPIC_API_KEY
+        sync: false
+    healthCheckPath: /api/health
+    autoDeploy: true
+
+  # Frontend Client Service
+  - type: web
+    name: cloudnine-client
+    runtime: static
+    plan: free
+    buildCommand: cd client && npm install && npm run build
+    staticPublishPath: ./client/dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://cloudnine-server.onrender.com/api
+    autoDeploy: true
+
+  # Background Worker (optional - for scheduled tasks)
+  - type: worker
+    name: cloudnine-worker
+    runtime: node
+    plan: free
+    buildCommand: cd server && npm install
+    startCommand: cd server && npm run worker
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: cloudnine-db
+          property: connectionString
+    autoDeploy: true
+
+databases:
+  - name: cloudnine-db
+    plan: free
+    databaseName: cloudnine
+    user: cloudnine
